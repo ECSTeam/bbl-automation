@@ -2,7 +2,7 @@
 #
 # Automating bbl
 set -e
-set -x
+# set -x
 
 function deploy_on_azure () {
   echo "Let's start with some Azure basics:"
@@ -69,10 +69,9 @@ function deploy_on_azure () {
   echo "Above is a list of used IP addresses across your Azure subscription."
   read -p "Pick an unused CIDR for the deployment (use format x.x.x.x/xx): " CUSTOM_CIDR
 
-  echo "\n" >> ./vars/bbl.tfvars
   echo "system_domain=\"fake.domain\"" >> ./vars/bbl.tfvars
-  echo "network_cidr=$CUSTOM_CIDR" >> ./vars/bbl.tfvars
-  echo "internal_cidr=$CUSTOM_CIDR" >> ./vars/bbl.tfvars
+  echo "network_cidr=\"$CUSTOM_CIDR\"" >> ./vars/bbl.tfvars
+  echo "internal_cidr=\"$CUSTOM_CIDR\"" >> ./vars/bbl.tfvars
 
   # Deploy
   bbl up --iaas azure \
