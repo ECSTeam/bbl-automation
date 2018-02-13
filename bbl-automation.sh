@@ -2,7 +2,7 @@
 #
 # Automating bbl
 set -e
-# set -x
+set -x
 
 function deploy_on_azure () {
   echo "Let's start with some Azure basics:"
@@ -13,14 +13,14 @@ function deploy_on_azure () {
   read -p "Azure region: " AZ_REG
   read -p "Remote access app name: " APP_NAME
   echo "Let's create a key for the Application Gateway:"
-  read -s -p "Private key password: " KEY_PASSWORD
+  read -s -p "Pick a private key password: " KEY_PASSWORD
   echo
-  read -p "Enter in your Country: " COUNTRY
-  read -p "Enter in your State (full name): " STATE
-  read -p "Enter in your City: " CITY
-  read -p "Enter in your Company Name: " ORGANIZATION
-  read -p "Enter in your Department: "  DEPARTMENT
-  read -p "Enter in your Domain Name: " DOMAIN_NAME
+  read -p "Enter your Country: " COUNTRY
+  read -p "Enter your State (full name): " STATE
+  read -p "Enter your City: " CITY
+  read -p "Enter your Company Name: " ORGANIZATION
+  read -p "Enter your Department: "  DEPARTMENT
+  read -p "Enter your Domain Name: " DOMAIN_NAME
   echo "Here we go!"
 
   APP_ACCESS="http://$APP_NAME"
@@ -85,11 +85,44 @@ function deploy_on_azure () {
   --lb-cert lbcert \
   --lb-key lbkey \
   --debug
+
+  sleep 60s
+  access_jumpbox
 }
 
 function deploy_on_aws () {
-  echo "AWS is not supported at the moment."
-  exit 1
+  echo "Let's start with some AWS basics:"
+  read -p "Name your deployment: " NAME
+  read -p "Your aws_access_key_id: " ACCESS_KEY_ID
+  read -s -p "Your aws_secret_access_key: " ACCESS_SECRET_KEY
+  echo
+  read -p "Deployment region: " DEP_REGION
+  read -p "Your preferred output format (json, text, table): " PREF_FORMAT
+
+  echo "[default]" >> ~/.aws/credentials
+  echo "aws_access_key_id=$ACCESS_KEY_ID" >> ~/.aws/credentials
+  echo "aws_secret_access_key=$ACCESS_SECRET_KEY" >> ~/.aws/credentials
+
+  echo "[default]" >> ~/.aws/config
+  echo "region=$DEP_REGION" >> ~/.aws/config
+  echo "output=$PREF_FORMAT" >> ~/.aws/config
+
+  aws iam create-user --user-name "bbl-user"
+  aws iam put-user-policy --user-name "bbl-user" \
+  	--policy-name "bbl-policy" \
+  	--policy-document file://policy
+
+  AWS_KEY=$(aws iam create-access-key --user-name "bbl-user")
+
+  bbl up \
+	--aws-access-key-id $ACCESS_KEY_ID \
+	--aws-secret-access-key $ACCESS_SECRET_KEY \
+	--aws-region $DEP_REGION \
+	--iaas aws
+  --name $NAME
+
+  sleep 60s
+  access_jumpbox
 }
 
 function deploy_on_gcp () {
@@ -97,8 +130,25 @@ function deploy_on_gcp () {
   exit 1
 }
 
+function access_jumpbox () {
+  # Let's start with access info
+  JUMPBOX_ADDRESS=$(bbl jumpbox-address)
+  bbl ssh-key > key
+  chmod 400 key
+
+  ssh -o StrictHostKeyChecking=no -i ./key jumpbox@$JUMPBOX_ADDRESS "$(typeset -f configure_jumpbox); configure_jumpbox"
+}
+
 function configure_jumpbox () {
-  echo "Coming soon!"
+  sudo apt-get update && sudo apt-get upgrade -y
+  sudo apt-get install -y build-essential zlibc zlib1g-dev ruby ruby-dev openssl libxslt-dev libxml2-dev libssl-dev libreadline6 libreadline6-dev libyaml-dev libsqlite3-dev sqlite3 git nano vim
+  wget https://s3.amazonaws.com/bosh-cli-artifacts/bosh-cli-2.0.48-linux-amd64
+  chmod +x bosh-cli-*
+  sudo mv bosh-cli-* /usr/local/bin/bosh
+
+  # paste contents of director-vars-store.yml and run bosh alias-env your-bosh-alias -e bosh-director-ip-address --ca-cert <(bosh int ./your-created-file.yml --path /director_ssl/ca) to target the director
+  # log into bosh director with the username admin and password stored in bbl-state.json
+
 }
 
 read -p "Pick an IAAS - azure, aws, or gcp: " IAAS
