@@ -69,7 +69,8 @@ function deploy_on_azure () {
   echo "Above is a list of used IP addresses across your Azure subscription."
   read -p "Pick an unused CIDR for the deployment (use format x.x.x.x/xx): " CUSTOM_CIDR
 
-  echo "system_domain=fake.domain" >> ./vars/bbl.tfvars
+  echo "\n" >> ./vars/bbl.tfvars
+  echo "system_domain=\"fake.domain\"" >> ./vars/bbl.tfvars
   echo "network_cidr=$CUSTOM_CIDR" >> ./vars/bbl.tfvars
   echo "internal_cidr=$CUSTOM_CIDR" >> ./vars/bbl.tfvars
 
@@ -81,7 +82,7 @@ function deploy_on_azure () {
   --azure-client-id $AZ_CLI_ID \
   --azure-client-secret password \
   --azure-region $AZ_REG \
-  --lb-type $cf \
+  --lb-type cf \
   --lb-cert lbcert \
   --lb-key lbkey \
   --debug
