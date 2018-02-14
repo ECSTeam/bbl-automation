@@ -10,6 +10,8 @@ function deploy_on_azure () {
   read -s -p "Azure password: " AZURE_PASSWORD
   echo
   read -p "Deployment name: " NAME
+  echo "For a list of regions, run:"
+  echo "az account list-locations | jq -r '.[].name'"
   read -p "Azure region: " AZ_REG
   read -p "Remote access app name: " APP_NAME
   echo "Let's create a key for the Application Gateway:"
@@ -67,6 +69,7 @@ function deploy_on_azure () {
 
   az network nic list | jq -r '.[].ipConfigurations[].privateIpAddress' | sort
   echo "Above is a list of used IP addresses across your Azure subscription."
+  echo "bbl will not properly deploy if you specify a range smaller than /16 (/24, for example)."
   read -p "Pick an unused CIDR for the deployment (use format x.x.x.x/xx): " CUSTOM_CIDR
 
   echo "system_domain=\"fake.domain\"" >> ./vars/bbl.tfvars
@@ -148,6 +151,7 @@ function configure_jumpbox () {
 
   # paste contents of director-vars-store.yml and run bosh alias-env your-bosh-alias -e bosh-director-ip-address --ca-cert <(bosh int ./your-created-file.yml --path /director_ssl/ca) to target the director
   # log into bosh director with the username admin and password stored in bbl-state.json
+  echo "You're ready to go!"
 
 }
 
