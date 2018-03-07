@@ -2,7 +2,7 @@
 #
 # Automating bbl
 set -e
-set -x
+#set -x
 
 function deploy_on_azure () {
   echo "Let's start with some Azure basics:"
@@ -94,28 +94,30 @@ function deploy_on_azure () {
 }
 
 function deploy_on_aws () {
+
+  #If the user has a preferred bbl-user, use that, otherwise default it
+  export HOLD_BBL_USER=${BBL_USER:-"bbl-user"}
+
   echo "Let's start with some AWS basics:"
   read -p "Name your deployment: " NAME
-  read -p "Your aws_access_key_id: " ACCESS_KEY_ID
-  read -s -p "Your aws_secret_access_key: " ACCESS_SECRET_KEY
+  read -p "bbl user ID[${HOLD_BBL_USER}]: " BBL_USER
+  export BBL_USER=${BBL_USER:-${HOLD_BBL_USER}}
+
   echo
-  read -p "Deployment region: " DEP_REGION
-  read -p "Your preferred output format (json, text, table): " PREF_FORMAT
+  aws configure
+  . ./read_config.sh ~/.aws/credentials
+  . ./read_config.sh ~/.aws/config
+  ACCESS_KEY_ID=${aws_access_key_id[default]}
+  ACCESS_SECRET_KEY=${aws_secret_access_key[default]}
+  DEP_REGION=${region[default]}
+  PREF_FORMAT=${output[default]}
 
-  echo "[default]" >> ~/.aws/credentials
-  echo "aws_access_key_id=$ACCESS_KEY_ID" >> ~/.aws/credentials
-  echo "aws_secret_access_key=$ACCESS_SECRET_KEY" >> ~/.aws/credentials
-
-  echo "[default]" >> ~/.aws/config
-  echo "region=$DEP_REGION" >> ~/.aws/config
-  echo "output=$PREF_FORMAT" >> ~/.aws/config
-
-  aws iam create-user --user-name "bbl-user"
-  aws iam put-user-policy --user-name "bbl-user" \
+  aws iam create-user --user-name ${BBL_USER}
+  aws iam put-user-policy --user-name ${BBL_USER} \
   	--policy-name "bbl-policy" \
   	--policy-document file://policy
 
-  AWS_KEY=$(aws iam create-access-key --user-name "bbl-user")
+  AWS_KEY=$(aws iam create-access-key --user-name ${BBL_USER})
 
   bbl up \
 	--aws-access-key-id $ACCESS_KEY_ID \
