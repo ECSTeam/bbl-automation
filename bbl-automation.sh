@@ -4,6 +4,11 @@
 set -e
 #set -x
 
+
+# this script assumes the presence of certain files in the same directory as the executable
+# Ensure that the $CWD is where the executable is
+cd "$(dirname "$0")"
+
 function deploy_on_azure () {
   echo "Let's start with some Azure basics:"
   read -p "Azure username: " AZURE_USERNAME
@@ -112,10 +117,32 @@ function deploy_on_aws () {
   DEP_REGION=${region[default]}
   PREF_FORMAT=${output[default]}
 
-  aws iam create-user --user-name ${BBL_USER}
-  aws iam put-user-policy --user-name ${BBL_USER} \
-  	--policy-name "bbl-policy" \
-  	--policy-document file://policy
+  if aws iam get-user --user-name $BBL_USER 2>/dev/null
+  then
+    echo "====================================================================="
+    echo "$BBL_USER previously existed. Skipping creation step."
+    echo "====================================================================="
+  else
+    echo "====================================================================="
+    echo "Creating bbl user: $BBL_USER"
+    echo "====================================================================="
+    aws iam create-user --user-name ${BBL_USER}
+  fi
+
+  if [ -z $( aws iam list-user-policies --user-name $BBL_USER --output text --query PolicyNames|grep bbl-policy ) ]
+  then
+    echo "====================================================================="
+    echo "Assigning bbl-policy to $BBL_USER. "
+    echo "====================================================================="
+    aws iam put-user-policy --user-name ${BBL_USER} \
+      --policy-name "bbl-policy" \
+      --policy-document file://policy
+    aws iam list-user-policies --user-name $BBL_USER
+  else
+    echo "====================================================================="
+    echo "$BBL_USER has bbl-policy. Skipping policy creation/assignment step."
+    echo "====================================================================="
+  fi
 
   AWS_KEY=$(aws iam create-access-key --user-name ${BBL_USER})
 
@@ -123,7 +150,7 @@ function deploy_on_aws () {
 	--aws-access-key-id $ACCESS_KEY_ID \
 	--aws-secret-access-key $ACCESS_SECRET_KEY \
 	--aws-region $DEP_REGION \
-	--iaas aws
+	--iaas aws \
   --name $NAME
 
   sleep 60s
