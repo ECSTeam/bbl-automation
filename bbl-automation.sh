@@ -2,12 +2,18 @@
 #
 # Automating bbl
 set -e
-#set -x
 
+
+#set -x
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BIN_DIR="${SCRIPT_DIR}/bin"
+source ${BIN_DIR}/array_menu.sh
+MENU_SELECTION_POSITION=-1
+MENU_SELECTION=''
 
 # this script assumes the presence of certain files in the same directory as the executable
 # Ensure that the $CWD is where the executable is
-cd "$(dirname "$0")"
+cd "${SCRIPT_DIR}"
 
 function deploy_on_azure () {
   echo "Let's start with some Azure basics:"
@@ -98,6 +104,24 @@ function deploy_on_azure () {
   access_jumpbox
 }
 
+function retrieveAwsCredentialsAndConfig()
+{
+  echo "Using ${SELECTED_PROFILE} profile of ~/.aws/credentials and ~/.aws/config"
+
+  . ${BIN_DIR}/read_config.sh ~/.aws/credentials
+  declare "ACCESS_KEY_ID_var=aws_access_key_id[${SELECTED_PROFILE}]"
+  ACCESS_KEY_ID="${!ACCESS_KEY_ID_var}"
+  declare "ACCESS_SECRET_KEY_var=aws_secret_access_key[${SELECTED_PROFILE}]"
+  ACCESS_SECRET_KEY=${!ACCESS_SECRET_KEY_var}
+
+  . ${BIN_DIR}/read_config.sh ~/.aws/config
+  declare "DEP_REGION_var=region[${SELECTED_PROFILE}]"
+  DEP_REGION="${!DEP_REGION_var}"
+  declare "PREF_FORMAT_var=output[${SELECTED_PROFILE}]"
+  PREF_FORMAT=${!PREF_FORMAT_var}
+
+}
+
 function deploy_on_aws () {
 
   #If the user has a preferred bbl-user, use that, otherwise default it
@@ -109,13 +133,11 @@ function deploy_on_aws () {
   export BBL_USER=${BBL_USER:-${HOLD_BBL_USER}}
 
   echo
+  SELECTED_PROFILE=default
+#  aws configure --profile ${SELECTED_PROFILE}
   aws configure
-  . ./read_config.sh ~/.aws/credentials
-  . ./read_config.sh ~/.aws/config
-  ACCESS_KEY_ID=${aws_access_key_id[default]}
-  ACCESS_SECRET_KEY=${aws_secret_access_key[default]}
-  DEP_REGION=${region[default]}
-  PREF_FORMAT=${output[default]}
+
+  retrieveAwsCredentialsAndConfig
 
   if aws iam get-user --user-name $BBL_USER 2>/dev/null
   then
@@ -136,7 +158,7 @@ function deploy_on_aws () {
     echo "====================================================================="
     aws iam put-user-policy --user-name ${BBL_USER} \
       --policy-name "bbl-policy" \
-      --policy-document file://policy
+      --policy-document file://${SCRIPT_DIR}/policy
     aws iam list-user-policies --user-name $BBL_USER
   else
     echo "====================================================================="
@@ -165,10 +187,11 @@ function deploy_on_gcp () {
 function access_jumpbox () {
   # Let's start with access info
   JUMPBOX_ADDRESS=$(bbl jumpbox-address)
-  bbl ssh-key > key
-  chmod 400 key
+  rm -f ${SCRIPT_DIR}/key
+  bbl ssh-key > ${SCRIPT_DIR}/key
+  chmod 400 ${SCRIPT_DIR}/key
 
-  ssh -o StrictHostKeyChecking=no -i ./key jumpbox@$JUMPBOX_ADDRESS "$(typeset -f configure_jumpbox); configure_jumpbox"
+  ssh -o StrictHostKeyChecking=no -i ${SCRIPT_DIR}/key jumpbox@$JUMPBOX_ADDRESS "$(typeset -f configure_jumpbox); configure_jumpbox"
 }
 
 function configure_jumpbox () {
@@ -184,11 +207,34 @@ function configure_jumpbox () {
 
 }
 
-read -p "Pick an IAAS - azure, aws, or gcp: " IAAS
+echo  "Pick an IAAS - azure, aws, or gcp: "
+IAAS_OPTIONS=(azure aws gcp)
+createMenu "${#IAAS_OPTIONS[@]}" "${IAAS_OPTIONS[@]}"
+IAAS=$MENU_SELECTION_POSITION
 
-if [ $IAAS == "azure" ]; then deploy_on_azure
-elif [ $IAAS == "aws" ]; then deploy_on_aws
-elif [ $IAAS == "gcp" ]; then deploy_on_gcp
-else echo "Try 'aws', 'azure', or 'gcp' as valid inputs."
+case $IAAS in
+1)
+  echo "Beginning $MENU_SELECTION process"
+  deploy_on_azure
+  ;;
+2)
+  echo "Beginning $MENU_SELECTION process"
+  deploy_on_aws
+  ;;
+3)
+  echo "Beginning $MENU_SELECTION process"
+  deploy_on_gcp
+  ;;
+*)
+  echo "No valid option selected"
   exit 1
-fi
+  ;;
+esac
+
+#read -p "Pick an IAAS - azure, aws, or gcp: " IAAS
+#if [ $IAAS == "azure" ]; then deploy_on_azure
+#elif [ $IAAS == "aws" ]; then deploy_on_aws
+#elif [ $IAAS == "gcp" ]; then deploy_on_gcp
+#else echo "Try 'aws', 'azure', or 'gcp' as valid inputs."
+#  exit 1
+#fi
