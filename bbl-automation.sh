@@ -8,6 +8,12 @@ set -e
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 BIN_DIR="${SCRIPT_DIR}/bin"
 source ${BIN_DIR}/array_menu.sh
+source ${BIN_DIR}/access_jumpbox.sh
+source ${BIN_DIR}/deploy_on_aws.sh
+source ${BIN_DIR}/deploy_on_gcp.sh
+DEPLOY_DIR=${DEPLOY_DIR:-"deploy"}
+
+
 MENU_SELECTION_POSITION=-1
 MENU_SELECTION=''
 
@@ -104,113 +110,41 @@ function deploy_on_azure () {
   access_jumpbox
 }
 
-function retrieveAwsCredentialsAndConfig()
+function displayUsage()
 {
-  echo "Using ${SELECTED_PROFILE} profile of ~/.aws/credentials and ~/.aws/config"
-
-  . ${BIN_DIR}/read_config.sh ~/.aws/credentials
-  declare "ACCESS_KEY_ID_var=aws_access_key_id[${SELECTED_PROFILE}]"
-  ACCESS_KEY_ID="${!ACCESS_KEY_ID_var}"
-  declare "ACCESS_SECRET_KEY_var=aws_secret_access_key[${SELECTED_PROFILE}]"
-  ACCESS_SECRET_KEY=${!ACCESS_SECRET_KEY_var}
-
-  . ${BIN_DIR}/read_config.sh ~/.aws/config
-  declare "DEP_REGION_var=region[${SELECTED_PROFILE}]"
-  DEP_REGION="${!DEP_REGION_var}"
-  declare "PREF_FORMAT_var=output[${SELECTED_PROFILE}]"
-  PREF_FORMAT=${!PREF_FORMAT_var}
-
+  echo "Usage: "$(basename $0)" [-d <deployDir>]"
 }
 
-function deploy_on_aws () {
+IAAS=""
 
-  #If the user has a preferred bbl-user, use that, otherwise default it
-  export HOLD_BBL_USER=${BBL_USER:-"bbl-user"}
+while getopts ":d:i:" opt; do
+  case ${opt} in
+    d)
+      DEPLOY_DIR=$OPTARG
+      ;;
+    i)
+      IAAS=$OPTARG
+      ;;
+    \?)
+      displayUsage
+      exit 1
+      ;;
+  esac
+done
+echo ${DEPLOY_DIR}
+mkdir -p ${DEPLOY_DIR}
+DEPLOY_DIR="$( cd ${DEPLOY_DIR}  && pwd )"
 
-  echo "Let's start with some AWS basics:"
-  read -p "Name your deployment: " NAME
-  read -p "bbl user ID[${HOLD_BBL_USER}]: " BBL_USER
-  export BBL_USER=${BBL_USER:-${HOLD_BBL_USER}}
-
-  echo
-  SELECTED_PROFILE=default
-#  aws configure --profile ${SELECTED_PROFILE}
-  aws configure
-
-  retrieveAwsCredentialsAndConfig
-
-  if aws iam get-user --user-name $BBL_USER 2>/dev/null
-  then
-    echo "====================================================================="
-    echo "$BBL_USER previously existed. Skipping creation step."
-    echo "====================================================================="
-  else
-    echo "====================================================================="
-    echo "Creating bbl user: $BBL_USER"
-    echo "====================================================================="
-    aws iam create-user --user-name ${BBL_USER}
-  fi
-
-  if [ -z $( aws iam list-user-policies --user-name $BBL_USER --output text --query PolicyNames|grep bbl-policy ) ]
-  then
-    echo "====================================================================="
-    echo "Assigning bbl-policy to $BBL_USER. "
-    echo "====================================================================="
-    aws iam put-user-policy --user-name ${BBL_USER} \
-      --policy-name "bbl-policy" \
-      --policy-document file://${SCRIPT_DIR}/policy
-    aws iam list-user-policies --user-name $BBL_USER
-  else
-    echo "====================================================================="
-    echo "$BBL_USER has bbl-policy. Skipping policy creation/assignment step."
-    echo "====================================================================="
-  fi
-
-  AWS_KEY=$(aws iam create-access-key --user-name ${BBL_USER})
-
-  bbl up \
-	--aws-access-key-id $ACCESS_KEY_ID \
-	--aws-secret-access-key $ACCESS_SECRET_KEY \
-	--aws-region $DEP_REGION \
-	--iaas aws \
-  --name $NAME
-
-  sleep 60s
-  access_jumpbox
-}
-
-function deploy_on_gcp () {
-  echo "Google Cloud is not supported at the moment."
-  exit 1
-}
-
-function access_jumpbox () {
-  # Let's start with access info
-  JUMPBOX_ADDRESS=$(bbl jumpbox-address)
-  rm -f ${SCRIPT_DIR}/key
-  bbl ssh-key > ${SCRIPT_DIR}/key
-  chmod 400 ${SCRIPT_DIR}/key
-
-  ssh -o StrictHostKeyChecking=no -i ${SCRIPT_DIR}/key jumpbox@$JUMPBOX_ADDRESS "$(typeset -f configure_jumpbox); configure_jumpbox"
-}
-
-function configure_jumpbox () {
-  sudo apt-get update && sudo apt-get upgrade -y
-  sudo apt-get install -y build-essential zlibc zlib1g-dev ruby ruby-dev openssl libxslt-dev libxml2-dev libssl-dev libreadline6 libreadline6-dev libyaml-dev libsqlite3-dev sqlite3 git nano vim
-  wget https://s3.amazonaws.com/bosh-cli-artifacts/bosh-cli-2.0.48-linux-amd64
-  chmod +x bosh-cli-*
-  sudo mv bosh-cli-* /usr/local/bin/bosh
-
-  # paste contents of director-vars-store.yml and run bosh alias-env your-bosh-alias -e bosh-director-ip-address --ca-cert <(bosh int ./your-created-file.yml --path /director_ssl/ca) to target the director
-  # log into bosh director with the username admin and password stored in bbl-state.json
-  echo "You're ready to go!"
-
-}
-
-echo  "Pick an IAAS - azure, aws, or gcp: "
-IAAS_OPTIONS=(azure aws gcp)
-createMenu "${#IAAS_OPTIONS[@]}" "${IAAS_OPTIONS[@]}"
-IAAS=$MENU_SELECTION_POSITION
+IAAS_OPTIONS=( azure aws gcp )
+if [ -z $( printf '%s\n' "${IAAS_OPTIONS[@]}"|grep -w $IAAS ) ]
+then
+  echo  "Pick an IAAS - azure, aws, or gcp: "
+  createMenu "${#IAAS_OPTIONS[@]}" "${IAAS_OPTIONS[@]}"
+  IAAS=$MENU_SELECTION_POSITION
+else
+  MENU_SELECTION=$IAAS
+  IAAS=$( printf '%s\n' "${IAAS_OPTIONS[@]}"|grep -nw $IAAS|cut -d":" -f1 )
+fi
 
 case $IAAS in
 1)
@@ -230,11 +164,3 @@ case $IAAS in
   exit 1
   ;;
 esac
-
-#read -p "Pick an IAAS - azure, aws, or gcp: " IAAS
-#if [ $IAAS == "azure" ]; then deploy_on_azure
-#elif [ $IAAS == "aws" ]; then deploy_on_aws
-#elif [ $IAAS == "gcp" ]; then deploy_on_gcp
-#else echo "Try 'aws', 'azure', or 'gcp' as valid inputs."
-#  exit 1
-#fi
