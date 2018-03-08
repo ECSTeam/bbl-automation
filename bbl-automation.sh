@@ -112,7 +112,7 @@ function deploy_on_azure () {
 
 function displayUsage()
 {
-  echo "Usage: "$(basename $0)" [-d <deployDir>]"
+  echo "Usage: "$(basename $0)" [-d <deployDir>] [-i <desired iaas>]"
 }
 
 IAAS=""
