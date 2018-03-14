@@ -17,6 +17,10 @@ createMenu ()
 
     select option in "${@:2}" ;
     do
+      re='^[0-9]+$'
+      if ! [[ $REPLY =~ $re ]] ; then
+         REPLY=-1
+      fi
       if [ "$REPLY" -eq "$arrsize" ];
       then
         MENU_SELECTION=$option
